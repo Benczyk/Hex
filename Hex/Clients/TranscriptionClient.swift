@@ -6,6 +6,7 @@
 //
 
 import AVFoundation
+import ComposableArchitecture
 import Dependencies
 import DependenciesMacros
 import Foundation
@@ -73,6 +74,7 @@ actor TranscriptionClientLive {
   /// The name of the currently loaded model, if any.
   private var currentModelName: String?
   private var parakeet: ParakeetClient = ParakeetClient()
+  private var appleSpeech: AppleSpeechClient = AppleSpeechClient()
 
   /// The base folder under which we store model data (e.g., ~/Library/Application Support/...).
   private lazy var modelsBaseFolder: URL = {
@@ -88,6 +90,11 @@ actor TranscriptionClientLive {
   /// Ensures the given `variant` model is downloaded and loaded, reporting
   /// overall progress (0%–50% for downloading, 50%–100% for loading).
   func downloadAndLoadModel(variant: String, progressCallback: @escaping (Progress) -> Void) async throws {
+    // Apple Speech: "download" means asking macOS to install the speech assets.
+    if AppleSpeechModel.matches(variant) {
+      try await appleSpeech.install(outputLanguage: currentSettings().outputLanguage, progress: progressCallback)
+      return
+    }
     // If Parakeet, use Parakeet client path
     if isParakeet(variant) {
       try await parakeet.ensureLoaded(modelName: variant, progress: progressCallback)
@@ -140,6 +147,10 @@ actor TranscriptionClientLive {
 
   /// Deletes a model from disk if it exists
   func deleteModel(variant: String) async throws {
+    if AppleSpeechModel.matches(variant) {
+      await appleSpeech.releaseAssets(outputLanguage: currentSettings().outputLanguage)
+      return
+    }
     if isParakeet(variant) {
       try await parakeet.deleteCaches(modelName: variant)
       if currentModelName == variant { unloadCurrentModel() }
@@ -167,6 +178,9 @@ actor TranscriptionClientLive {
   /// Returns `true` if the model is already downloaded to the local folder.
   /// Performs a thorough check to ensure the model files are actually present and usable.
   func isModelDownloaded(_ modelName: String) async -> Bool {
+    if AppleSpeechModel.matches(modelName) {
+      return await appleSpeech.isInstalled(outputLanguage: currentSettings().outputLanguage)
+    }
     if isParakeet(modelName) {
       let available = await parakeet.isModelAvailable(modelName)
       parakeetLogger.debug("Parakeet available? \(available)")
@@ -215,6 +229,9 @@ actor TranscriptionClientLive {
       if !names.contains(model.identifier) { names.insert(model.identifier, at: 0) }
     }
     #endif
+    if AppleSpeechClient.isSupported, !names.contains(AppleSpeechModel.identifier) {
+      names.insert(AppleSpeechModel.identifier, at: 0)
+    }
     return names
   }
 
@@ -228,6 +245,21 @@ actor TranscriptionClientLive {
     progressCallback: @escaping (Progress) -> Void
   ) async throws -> String {
     let startAll = Date()
+    if AppleSpeechModel.matches(model) {
+      let settings = currentSettings()
+      // Remapping targets become expected words for the recognizer; the text
+      // replacement still runs afterwards in TranscriptionFeature.
+      let contextualStrings = ContextualStringsBuilder.build(from: settings.wordRemappings)
+      transcriptionLogger.notice("Transcribing with Apple Speech file=\(url.lastPathComponent)")
+      let text = try await appleSpeech.transcribe(
+        url: url,
+        outputLanguage: options.language ?? settings.outputLanguage,
+        contextualStrings: contextualStrings,
+        progress: progressCallback
+      )
+      transcriptionLogger.info("Apple Speech request total elapsed \(String(format: "%.2f", Date().timeIntervalSince(startAll)))s")
+      return text
+    }
     if isParakeet(model) {
       transcriptionLogger.notice("Transcribing with Parakeet model=\(model) file=\(url.lastPathComponent)")
       let startLoad = Date()
@@ -295,6 +327,11 @@ actor TranscriptionClientLive {
     }
 
     return ModelPatternMatcher.resolvePattern(variant, from: models) ?? variant
+  }
+
+  private func currentSettings() -> HexSettings {
+    @Shared(.hexSettings) var hexSettings: HexSettings
+    return hexSettings
   }
 
   private func isParakeet(_ name: String) -> Bool {

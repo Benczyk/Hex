@@ -72,6 +72,7 @@ struct TranscriptionFeature {
   @Dependency(\.sleepManagement) var sleepManagement
   @Dependency(\.date.now) var now
   @Dependency(\.transcriptPersistence) var transcriptPersistence
+  @Dependency(\.textCleanup) var textCleanup
 
   var body: some ReducerOf<Self> {
     Reduce { state, action in
@@ -460,6 +461,9 @@ private extension TranscriptionFeature {
     let removalsEnabled = state.hexSettings.wordRemovalsEnabled
     let removals = state.hexSettings.wordRemovals
     let modifiedResult: String
+    // Optional Apple Intelligence cleanup runs after removals/remapping and before
+    // paste formatting, so "lowercase" / "remove punctuation" still win.
+    var cleanupInput: String?
     if state.isRemappingScratchpadFocused {
       modifiedResult = result
       transcriptionFeatureLogger.info("Scratchpad focused; skipping word modifications")
@@ -477,6 +481,9 @@ private extension TranscriptionFeature {
       if remappedResult != output {
         transcriptionFeatureLogger.info("Applied \(remappings.count) word remapping(s)")
       }
+      if state.hexSettings.textCleanupEnabled {
+        cleanupInput = remappedResult
+      }
       let formattedResult = TranscriptFormattingApplier.apply(
         remappedResult,
         lowercase: state.hexSettings.lowercaseTranscripts,
@@ -488,7 +495,7 @@ private extension TranscriptionFeature {
       modifiedResult = formattedResult
     }
 
-    guard !modifiedResult.isEmpty else {
+    guard !modifiedResult.isEmpty || !(cleanupInput ?? "").isEmpty else {
       return .run { _ in
         FileManager.default.removeItemIfExists(at: audioURL)
       }
@@ -497,11 +504,31 @@ private extension TranscriptionFeature {
     let sourceAppBundleID = state.sourceAppBundleID
     let sourceAppName = state.sourceAppName
     let transcriptionHistory = state.$transcriptionHistory
+    let cleanupPrompt = state.hexSettings.textCleanupPrompt
+    let lowercase = state.hexSettings.lowercaseTranscripts
+    let removePunctuation = state.hexSettings.removePunctuation
 
     return .run { send in
+      var finalResult = modifiedResult
+      if let cleanupInput, !cleanupInput.isEmpty {
+        let cleaned = await cleanUpOrFallback(cleanupInput, prompt: cleanupPrompt)
+        guard !Task.isCancelled else {
+          FileManager.default.removeItemIfExists(at: audioURL)
+          return
+        }
+        finalResult = TranscriptFormattingApplier.apply(
+          cleaned,
+          lowercase: lowercase,
+          removePunctuation: removePunctuation
+        )
+      }
+      guard !finalResult.isEmpty else {
+        FileManager.default.removeItemIfExists(at: audioURL)
+        return
+      }
       do {
         try await finalizeRecordingAndStoreTranscript(
-          result: modifiedResult,
+          result: finalResult,
           duration: duration,
           sourceAppBundleID: sourceAppBundleID,
           sourceAppName: sourceAppName,
@@ -513,6 +540,32 @@ private extension TranscriptionFeature {
       }
     }
     .cancellable(id: CancelID.transcription)
+  }
+
+  /// Runs the optional Apple Intelligence cleanup. On unavailability, error,
+  /// timeout or a suspicious answer, returns the raw text unchanged.
+  func cleanUpOrFallback(_ text: String, prompt: String) async -> String {
+    guard textCleanup.isAvailable() else {
+      transcriptionFeatureLogger.notice("Text cleanup enabled but Apple Intelligence is unavailable; pasting raw text")
+      return text
+    }
+    let instructions = prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      ? TextCleanup.defaultPrompt
+      : prompt
+    let start = Date()
+    do {
+      let cleaned = try await textCleanup.cleanUp(text, instructions, TextCleanup.defaultTimeout)
+      guard let accepted = TextCleanup.accept(original: text, cleaned: cleaned) else {
+        transcriptionFeatureLogger.notice("Text cleanup output rejected; pasting raw text")
+        return text
+      }
+      transcriptionFeatureLogger.info("Text cleanup took \(String(format: "%.2f", Date().timeIntervalSince(start)))s")
+      transcriptionFeatureLogger.info("Cleaned transcription: '\(accepted, privacy: .private)'")
+      return accepted
+    } catch {
+      transcriptionFeatureLogger.error("Text cleanup failed: \(error.localizedDescription); pasting raw text")
+      return text
+    }
   }
 
   func handleTranscriptionError(

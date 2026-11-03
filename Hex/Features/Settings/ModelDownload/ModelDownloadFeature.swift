@@ -37,6 +37,7 @@ public struct CuratedModelInfo: Equatable, Identifiable, Codable {
 	public var id: String { internalName }
 
 	public var badge: String? {
+		if isAppleSpeech { return "BUILT INTO MACOS" }
 		switch parakeetModel {
 		case .englishV2:
 			return "BEST FOR ENGLISH"
@@ -53,6 +54,11 @@ public struct CuratedModelInfo: Equatable, Identifiable, Codable {
 
 	var isParakeet: Bool {
 		parakeetModel != nil
+	}
+
+	/// Apple's on-device SpeechTranscriber (macOS 26); assets are managed by macOS.
+	var isAppleSpeech: Bool {
+		AppleSpeechModel.matches(internalName)
 	}
 
 	public init(
@@ -101,7 +107,8 @@ private enum CuratedModelLoader {
 	}()
 
 	static func load() -> [CuratedModelInfo] {
-		bundledModels
+		// Apple Speech only exists on macOS 26+ builds; hide it elsewhere.
+		AppleSpeechClient.isSupported ? bundledModels : bundledModels.filter { !$0.isAppleSpeech }
 	}
 }
 
@@ -501,6 +508,8 @@ public struct ModelDownloadFeature {
 		// models folder. Route "Show in Finder" to the matching root so users
 		// don't end up staring at an empty WhisperKit folder thinking the
 		// Parakeet download silently failed.
+		// Apple Speech assets live in a system location managed by macOS.
+		guard !AppleSpeechModel.matches(model) else { return .none }
 		let usesParakeetRoot = ParakeetModel(rawValue: model) != nil
 		return .run { _ in
 			let base = try usesParakeetRoot

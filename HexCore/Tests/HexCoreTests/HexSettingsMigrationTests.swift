@@ -27,6 +27,8 @@ final class HexSettingsMigrationTests: XCTestCase {
 		XCTAssertEqual(decoded.hasCompletedStorageMigration, true)
 		XCTAssertFalse(decoded.lowercaseTranscripts)
 		XCTAssertFalse(decoded.removePunctuation)
+		XCTAssertFalse(decoded.textCleanupEnabled)
+		XCTAssertEqual(decoded.textCleanupPrompt, TextCleanup.defaultPrompt)
 	}
 
 	func testEncodeDecodeRoundTripPreservesDefaults() throws {
@@ -47,6 +49,17 @@ final class HexSettingsMigrationTests: XCTestCase {
 		let decoded = try JSONDecoder().decode(HexSettings.self, from: JSONEncoder().encode(settings))
 		XCTAssertTrue(decoded.hasDismissedRustBetaBanner)
 		XCTAssertEqual(decoded, settings)
+	}
+
+	func testTextCleanupIsOffByDefaultAndPersists() throws {
+		var settings = try JSONDecoder().decode(HexSettings.self, from: Data("{}".utf8))
+		XCTAssertFalse(settings.textCleanupEnabled)
+		XCTAssertEqual(settings.textCleanupPrompt, TextCleanup.defaultPrompt)
+		settings.textCleanupEnabled = true
+		settings.textCleanupPrompt = "Fix punctuation only."
+		let decoded = try JSONDecoder().decode(HexSettings.self, from: JSONEncoder().encode(settings))
+		XCTAssertTrue(decoded.textCleanupEnabled)
+		XCTAssertEqual(decoded.textCleanupPrompt, "Fix punctuation only.")
 	}
 
 	func testInitNormalizesDoubleTapOnlyWhenLockDisabled() {
