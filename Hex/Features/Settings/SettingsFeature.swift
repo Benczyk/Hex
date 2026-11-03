@@ -116,6 +116,11 @@ struct SettingsFeature {
     case setRemappingScratchpadFocused(Bool)
     case setLowercaseTranscripts(Bool)
     case setRemovePunctuation(Bool)
+
+    // Apple Intelligence cleanup
+    case setTextCleanupEnabled(Bool)
+    case setTextCleanupPrompt(String)
+    case resetTextCleanupPrompt
   }
 
   @Dependency(\.keyEventMonitor) var keyEventMonitor
@@ -414,6 +419,18 @@ struct SettingsFeature {
 
       case let .setRemovePunctuation(enabled):
         state.$hexSettings.withLock { $0.removePunctuation = enabled }
+        return .none
+
+      case let .setTextCleanupEnabled(enabled):
+        state.$hexSettings.withLock { $0.textCleanupEnabled = enabled }
+        return .none
+
+      case let .setTextCleanupPrompt(prompt):
+        state.$hexSettings.withLock { $0.textCleanupPrompt = prompt }
+        return .none
+
+      case .resetTextCleanupPrompt:
+        state.$hexSettings.withLock { $0.textCleanupPrompt = TextCleanup.defaultPrompt }
         return .none
 
       case .startSettingPasteLastTranscriptHotkey:

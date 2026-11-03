@@ -37,6 +37,10 @@ struct SettingsView: View {
 				LanguageSectionView(store: store)
 			}
 
+			if #available(macOS 26, *) {
+				TextCleanupSectionView(store: store)
+			}
+
 			HotKeySectionView(store: store)
           
 			if microphonePermission == .granted {

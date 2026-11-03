@@ -50,6 +50,9 @@ public struct HexSettings: Codable, Equatable, Sendable {
 	public var wordRemappings: [WordRemapping]
 	public var lowercaseTranscripts: Bool
 	public var removePunctuation: Bool
+	/// Optional Apple Intelligence (FoundationModels) cleanup pass after transcription. Off by default.
+	public var textCleanupEnabled: Bool
+	public var textCleanupPrompt: String
 
 	private mutating func normalizeDoubleTapSettings() {
 		if !doubleTapLockEnabled {
@@ -84,7 +87,9 @@ public struct HexSettings: Codable, Equatable, Sendable {
 		wordRemovals: [WordRemoval] = HexSettings.defaultWordRemovals,
 		wordRemappings: [WordRemapping] = [],
 		lowercaseTranscripts: Bool = false,
-		removePunctuation: Bool = false
+		removePunctuation: Bool = false,
+		textCleanupEnabled: Bool = false,
+		textCleanupPrompt: String = TextCleanup.defaultPrompt
 	) {
 		self.soundEffectsEnabled = soundEffectsEnabled
 		self.soundEffectsVolume = soundEffectsVolume
@@ -113,6 +118,8 @@ public struct HexSettings: Codable, Equatable, Sendable {
 		self.wordRemappings = wordRemappings
 		self.lowercaseTranscripts = lowercaseTranscripts
 		self.removePunctuation = removePunctuation
+		self.textCleanupEnabled = textCleanupEnabled
+		self.textCleanupPrompt = textCleanupPrompt
 		normalizeDoubleTapSettings()
 	}
 
@@ -164,6 +171,8 @@ private enum HexSettingKey: String, CodingKey, CaseIterable {
 	case wordRemappings
 	case lowercaseTranscripts
 	case removePunctuation
+	case textCleanupEnabled
+	case textCleanupPrompt
 }
 
 private struct SettingsField<Value: Codable & Sendable> {
@@ -299,6 +308,8 @@ private enum HexSettingsSchema {
 			default: defaults.wordRemappings
 		).eraseToAny(),
 		SettingsField(.lowercaseTranscripts, keyPath: \.lowercaseTranscripts, default: defaults.lowercaseTranscripts).eraseToAny(),
-		SettingsField(.removePunctuation, keyPath: \.removePunctuation, default: defaults.removePunctuation).eraseToAny()
+		SettingsField(.removePunctuation, keyPath: \.removePunctuation, default: defaults.removePunctuation).eraseToAny(),
+		SettingsField(.textCleanupEnabled, keyPath: \.textCleanupEnabled, default: defaults.textCleanupEnabled).eraseToAny(),
+		SettingsField(.textCleanupPrompt, keyPath: \.textCleanupPrompt, default: defaults.textCleanupPrompt).eraseToAny()
 	]
 }

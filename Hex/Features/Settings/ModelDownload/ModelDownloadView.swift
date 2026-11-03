@@ -390,7 +390,9 @@ private struct ModelLibrarySheet: View {
 			}
 			Button("Cancel", role: .cancel) { pendingDelete = nil }
 		} message: {
-			if let pendingDelete {
+			if let pendingDelete, pendingDelete.isAppleSpeech {
+				Text("Hex releases its claim on the Apple speech assets; macOS may remove them. You can install them again anytime.")
+			} else if let pendingDelete {
 				Text("This frees \(pendingDelete.storageSize) on this Mac. You can download it again anytime.")
 			}
 		}
@@ -546,8 +548,10 @@ private struct ModelLibraryRow: View {
 	/// Shared by the trailing ⋯ menu and the right-click context menu.
 	@ViewBuilder
 	private var managementMenuItems: some View {
-		Button("Show in Finder", action: onShowInFinder)
-		Divider()
+		if !model.isAppleSpeech {
+			Button("Show in Finder", action: onShowInFinder)
+			Divider()
+		}
 		Button("Remove Download…", role: .destructive, action: onDelete)
 	}
 

@@ -1,5 +1,13 @@
 [
   {
+    "displayName": "Apple Speech",
+    "internalName": "apple-speech-transcriber",
+    "size": "Built into macOS 26",
+    "accuracyStars": 4,
+    "speedStars": 5,
+    "storageSize": "Managed by macOS"
+  },
+  {
     "displayName": "Parakeet TDT v2",
     "internalName": "parakeet-tdt-0.6b-v2-coreml",
     "size": "English",
